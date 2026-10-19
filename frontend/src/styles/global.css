@@ -1,0 +1,172 @@
+:root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  color: rgba(0, 0, 0, 0.88);
+  background-color: #f5f7fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: #f5f7fa;
+}
+
+/* ---------- 登录 / 注册 ---------- */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #e8f1ff 0%, #f6f8fc 45%, #eef4ff 100%);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 42, 90, 0.1);
+}
+
+.auth-title {
+  text-align: center;
+  margin-bottom: 4px !important;
+}
+
+.auth-subtitle {
+  text-align: center;
+  margin-bottom: 24px !important;
+}
+
+.auth-footer {
+  text-align: right;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.auth-footer a {
+  margin-left: 4px;
+}
+
+/* ---------- 后台布局 ---------- */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 20px;
+  line-height: normal;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.brand-icon {
+  color: #1677ff;
+  font-size: 22px;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.user-chip:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.user-name {
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.75);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-arrow {
+  font-size: 10px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.app-sider {
+  border-right: 1px solid #f0f0f0;
+}
+
+.app-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.sider-inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: calc(100vh - 64px);
+  padding-bottom: 12px;
+}
+
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  margin: 8px 12px 0;
+  border: none;
+  border-radius: 8px;
+  background-color: #f5f7fa;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.collapse-btn:hover {
+  background-color: #e9eef6;
+  color: #1677ff;
+}
+
+.app-content {
+  padding: 20px 24px;
+  min-height: calc(100vh - 64px);
+  overflow: auto;
+  background-color: #f5f7fa;
+}
+
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- 个人中心 ---------- */
+.page-narrow {
+  max-width: 640px;
+}

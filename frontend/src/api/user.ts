@@ -1,13 +1,6 @@
 import { request } from '@/utils/request'
 import type { UserInfo } from '@/types'
 
-export interface UpdateProfileParams {
-  name?: string
-  email?: string
-  phone?: string
-  avatar?: string
-}
-
 export interface UpdatePasswordParams {
   old_password: string
   new_password: string
@@ -18,15 +11,6 @@ export function getMeApi() {
   return request<UserInfo>({
     url: '/api/user/me',
     method: 'get'
-  })
-}
-
-/** 更新当前登录用户信息 */
-export function updateMeApi(data: UpdateProfileParams) {
-  return request<UserInfo>({
-    url: '/api/user/me',
-    method: 'put',
-    data
   })
 }
 

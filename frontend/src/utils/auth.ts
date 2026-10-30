@@ -63,8 +63,16 @@ export function getCachedMenus(): MenuNode[] {
   return readJson<MenuNode[]>(MENUS_KEY) ?? []
 }
 
-/** 登出：清空 token / 用户 / 菜单 / 权限，并触发内存态清理钩子 */
+/** 登出：吊销服务端 Refresh Token，并清空本地登录态 */
 export function logout() {
+  const base = import.meta.env.VITE_API_BASE_URL || ''
+  void fetch(`${base}/api/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+    keepalive: true
+  }).catch(() => {
+    // 后端不可用时也要清除本地状态
+  })
   removeToken()
   removeUserInfo()
   localStorage.removeItem(MENUS_KEY)

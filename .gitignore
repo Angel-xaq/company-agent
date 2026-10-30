@@ -21,6 +21,7 @@ frontend/dist-ssr/
 .eslintcache
 *.tsbuildinfo
 coverage/
+docs/
 
 # IDE / editor / Cursor
 .idea/

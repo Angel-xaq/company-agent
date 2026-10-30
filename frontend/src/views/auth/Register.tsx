@@ -36,7 +36,7 @@ export default function Register() {
           欢迎注册
         </Typography.Title>
         <Typography.Paragraph type="secondary" className="auth-subtitle">
-          注册后将默认绑定学生角色
+          注册后将默认获得员工权限
         </Typography.Paragraph>
 
         <Form<RegisterForm> onFinish={handleFinish} size="large" requiredMark={false}>

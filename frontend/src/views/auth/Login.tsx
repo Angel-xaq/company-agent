@@ -24,7 +24,7 @@ export default function Login() {
       saveLoginData(res.data)
       feedback.success('登录成功')
       const from = (location.state as LocationState | null)?.from
-      navigate(from && from.startsWith('/manager') ? from : '/manager/home', {
+      navigate(from && from.startsWith('/manager') ? from : '/manager/chat', {
         replace: true
       })
     } catch {

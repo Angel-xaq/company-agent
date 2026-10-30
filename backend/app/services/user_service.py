@@ -1,8 +1,12 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
+from app.core.constants import DEFAULT_ROLE_CODE, ROLE_ADMIN
+from app.models.refresh_token import RefreshToken
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.role import RoleBrief
@@ -20,8 +24,8 @@ def _compat_role(roles: list[Role]) -> str | None:
     if not roles:
         return None
     codes = [r.code for r in roles if r.status == 1]
-    if "admin" in codes:
-        return "admin"
+    if ROLE_ADMIN in codes:
+        return ROLE_ADMIN
     return codes[0] if codes else None
 
 
@@ -84,7 +88,7 @@ def _count_other_admins(db: Session, exclude_user_id: int | None = None) -> int:
     query = (
         db.query(User)
         .join(User.roles)
-        .filter(Role.code == "admin", Role.status == 1, User.status == 1)
+        .filter(Role.code == ROLE_ADMIN, Role.status == 1, User.status == 1)
     )
     if exclude_user_id is not None:
         query = query.filter(User.id != exclude_user_id)
@@ -95,8 +99,8 @@ def _ensure_not_removing_last_admin(
     db: Session, user: User, new_roles: list[Role]
 ) -> None:
     """禁止把系统中最后一个管理员角色摘掉。"""
-    had_admin = any(r.code == "admin" for r in (user.roles or []))
-    will_have_admin = any(r.code == "admin" for r in new_roles)
+    had_admin = any(r.code == ROLE_ADMIN for r in (user.roles or []))
+    will_have_admin = any(r.code == ROLE_ADMIN for r in new_roles)
     if had_admin and not will_have_admin:
         if _count_other_admins(db, exclude_user_id=user.id) == 0:
             raise BusinessException(message="不能移除系统中最后一个管理员角色")
@@ -107,32 +111,20 @@ def get_user_info(user: User) -> UserResponse:
     return user_to_response(user)
 
 
-def update_user_info(db: Session, user: User, data: UserUpdateRequest):
-    """本人改资料（禁止改角色/状态/密码）"""
-    # 本人改资料禁止改角色/状态
-    user_dict = data.model_dump(
-        exclude_none=True,
-        exclude={"role", "role_ids", "status", "password"},
-    )
-    for field, value in user_dict.items():
-        setattr(user, field, value)
-    db.commit()
-    user = (
-        db.query(User)
-        .options(joinedload(User.roles).joinedload(Role.menus))
-        .filter(User.id == user.id)
-        .first()
-    )
-    return user_to_response(user)
-
-
 def update_password(db: Session, user: User, data: PasswordUpdateRequest):
-    """本人改密码（校验原密码且新旧不可相同）"""
+    """本人改密码（校验原密码且新旧不可相同），并吊销全部 Refresh Token。"""
     if not verify_password(data.old_password, user.password):
         raise BusinessException(message="原密码错误")
     if data.old_password == data.new_password:
         raise BusinessException(message="新密码不能与原密码相同")
     user.password = hash_password(data.new_password)
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.revoked_at.is_(None),
+    ).update(
+        {RefreshToken.revoked_at: datetime.now(timezone.utc)},
+        synchronize_session=False,
+    )
     db.commit()
 
 
@@ -157,17 +149,19 @@ def get_user_page_list(
 
 
 def create_user(db: Session, data: UserCreateRequest):
-    """新增用户（无角色时默认绑定 student）"""
+    """新增用户（无角色时默认绑定员工）"""
     exist = db.query(User).filter(User.username == data.username).first()
     if exist:
         raise BusinessException(message="账号已存在")
 
     roles = _resolve_roles(db, data.role_ids, data.role)
     if not roles:
-        student = db.query(Role).filter(Role.code == "student").first()
-        if not student:
-            raise BusinessException(message="默认学生角色不存在，请先初始化 RBAC")
-        roles = [student]
+        default_role = (
+            db.query(Role).filter(Role.code == DEFAULT_ROLE_CODE).first()
+        )
+        if not default_role:
+            raise BusinessException(message="默认员工角色不存在，请先初始化 RBAC")
+        roles = [default_role]
 
     user = User(
         username=data.username,
@@ -181,13 +175,15 @@ def create_user(db: Session, data: UserCreateRequest):
     user.roles = roles
     db.add(user)
     db.commit()
-    user = (
+    refreshed: User | None = (
         db.query(User)
         .options(joinedload(User.roles).joinedload(Role.menus))
         .filter(User.id == user.id)
         .first()
     )
-    return user_to_response(user)
+    if refreshed is None:
+        raise BusinessException(message="用户创建失败")
+    return user_to_response(refreshed)
 
 
 def update_user(db: Session, user_id: int, data: UserUpdateRequest):
@@ -214,13 +210,15 @@ def update_user(db: Session, user_id: int, data: UserUpdateRequest):
         user.roles = new_roles
 
     db.commit()
-    user = (
+    refreshed: User | None = (
         db.query(User)
         .options(joinedload(User.roles).joinedload(Role.menus))
         .filter(User.id == user_id)
         .first()
     )
-    return user_to_response(user)
+    if refreshed is None:
+        raise BusinessException(message="用户不存在")
+    return user_to_response(refreshed)
 
 
 def delete_user(db: Session, user_id: int, current_user: User):
@@ -235,9 +233,12 @@ def delete_user(db: Session, user_id: int, current_user: User):
     )
     if not user:
         raise BusinessException(message="用户不存在")
-    if any(r.code == "admin" for r in (user.roles or [])):
+    if any(r.code == ROLE_ADMIN for r in (user.roles or [])):
         if _count_other_admins(db, exclude_user_id=user.id) == 0:
             raise BusinessException(message="不能删除系统中最后一个管理员")
+    db.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete(
+        synchronize_session=False
+    )
     user.roles.clear()
     db.delete(user)
     db.commit()

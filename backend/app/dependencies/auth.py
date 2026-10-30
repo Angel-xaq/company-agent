@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session, joinedload
 
@@ -6,9 +6,9 @@ from app.database import get_db
 from app.models.user import User
 from app.models.role import Role
 from app.utils.jwt import decode_access_token
-from app.common.exceptions import BusinessException
+from app.common.exceptions import BusinessException, UnauthorizedException
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
 def has_role(user: User, code: str) -> bool:
@@ -32,20 +32,18 @@ def has_permission(user: User, code: str) -> bool:
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    token: str | None = Depends(oauth2_scheme), db: Session = Depends(get_db)
 ) -> User:
     """JWT token 鉴权，并预加载 roles / menus。"""
+    if not token:
+        raise UnauthorizedException(message="请先登录")
     try:
         payload = decode_access_token(token)
     except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效，请重新登录"
-        )
+        raise UnauthorizedException(message="登录已失效，请重新登录")
     user_id = payload.get("user_id")
     if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的登录凭证"
-        )
+        raise UnauthorizedException(message="无效的登录凭证")
     user = (
         db.query(User)
         .options(joinedload(User.roles).joinedload(Role.menus))
@@ -53,13 +51,9 @@ def get_current_user(
         .first()
     )
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在"
-        )
+        raise UnauthorizedException(message="用户不存在")
     if user.status != 1:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="用户被禁用"
-        )
+        raise UnauthorizedException(message="用户被禁用")
     return user
 
 

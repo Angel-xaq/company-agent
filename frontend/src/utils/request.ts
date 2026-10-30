@@ -1,13 +1,35 @@
-import axios, { type AxiosRequestConfig } from 'axios'
+import axios, {
+  type AxiosRequestConfig,
+  type InternalAxiosRequestConfig
+} from 'axios'
 
-import { getToken, logout } from '@/utils/auth'
+import {
+  PERMS_KEY,
+  getToken,
+  logout,
+  setToken,
+  setUserInfo,
+  writeJson
+} from '@/utils/auth'
 import { feedback } from '@/utils/feedback'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, LoginResult } from '@/types'
+
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    /** 标记该请求已经重试过，避免刷新死循环 */
+    _retry?: boolean
+  }
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 const service = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
-  timeout: 60000
+  baseURL: API_BASE_URL,
+  timeout: 60000,
+  withCredentials: true
 })
+
+let refreshPromise: Promise<string | null> | null = null
 
 /** 登录失效时整页跳回登录页，避免依赖路由实例 */
 function redirectToLogin() {
@@ -16,7 +38,48 @@ function redirectToLogin() {
   }
 }
 
-// 请求拦截器：统一携带 token
+/** 登录、刷新、退出接口不参与自动续期 */
+function isAuthEndpoint(url?: string) {
+  if (!url) return false
+  return (
+    url.includes('/api/auth/login') ||
+    url.includes('/api/auth/register') ||
+    url.includes('/api/auth/refresh') ||
+    url.includes('/api/auth/logout')
+  )
+}
+
+/** 登录/注册失败只提示错误，不应触发登出和跳转 */
+function isCredentialEndpoint(url?: string) {
+  if (!url) return false
+  return (
+    url.includes('/api/auth/login') ||
+    url.includes('/api/auth/register')
+  )
+}
+
+/** 使用 HttpOnly Cookie 中的 Refresh Token 换取新的 Access Token */
+async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const response = await axios.post<ApiResponse<LoginResult>>(
+      `${API_BASE_URL}/api/auth/refresh`,
+      {},
+      { withCredentials: true, timeout: 15000 }
+    )
+    const data = response.data
+    if (data.code !== 200 || !data.data?.token) {
+      return null
+    }
+    setToken(data.data.token)
+    setUserInfo(data.data.user)
+    writeJson(PERMS_KEY, data.data.user.permissions ?? [])
+    return data.data.token
+  } catch {
+    return null
+  }
+}
+
+// 请求拦截器：统一携带 Access Token
 service.interceptors.request.use(
   (config) => {
     const token = getToken()
@@ -28,7 +91,7 @@ service.interceptors.request.use(
   (err) => Promise.reject(err)
 )
 
-// 响应拦截器：统一处理业务码与 HTTP 错误
+// 响应拦截器：统一处理业务码、401 自动续期与 HTTP 错误
 service.interceptors.response.use(
   (res) => {
     const data = res.data as ApiResponse
@@ -46,14 +109,45 @@ service.interceptors.response.use(
     }
     return data as never
   },
-  (err) => {
+  async (err) => {
+    const original = err.config as InternalAxiosRequestConfig | undefined
+    const status = err.response?.status as number | undefined
+
+    if ( // 业务接口401进入这个地方
+      status === 401 &&
+      original &&
+      !original._retry &&
+      !isAuthEndpoint(original.url)
+    ) {
+      original._retry = true
+      if (!refreshPromise) {
+        refreshPromise = refreshAccessToken().finally(() => {
+          refreshPromise = null
+        })
+      }
+      const token = await refreshPromise
+      if (token) {
+        original.headers = original.headers ?? {}
+        original.headers.Authorization = `Bearer ${token}`
+        return service(original)
+      }
+      feedback.error('登录状态已失效，请重新登录')
+      logout()
+      redirectToLogin()
+      return Promise.reject(err)
+    }
+
     if (err.response) {
-      const status = err.response.status as number
       const msg = err.response.data?.message as string | undefined
       if (status === 401) {
-        feedback.error('登录状态已失效，请重新登录')
-        logout()
-        redirectToLogin()
+        if (isCredentialEndpoint(original?.url)) {
+          // 登录/注册失败：展示后端真实原因，不清除已有会话
+          feedback.error(msg || '账号或密码错误')
+        } else {
+          feedback.error('登录状态已失效，请重新登录')
+          logout()
+          redirectToLogin()
+        }
       } else if (status === 403) {
         feedback.error(msg || '无权限访问')
       } else {

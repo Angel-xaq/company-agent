@@ -16,17 +16,6 @@ def get_user_info(current_user: User = Depends(get_current_user)):
     return Response.success(data=user_service.get_user_info(current_user))
 
 
-@router.put("/me")
-def update_user_info(
-    data: UserUpdateRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """更新当前用户信息"""
-    res = user_service.update_user_info(db, current_user, data)
-    return Response.success(data=res)
-
-
 @router.put("/password")
 def update_password(
     data: PasswordUpdateRequest,

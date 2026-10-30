@@ -23,7 +23,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(50), comment="名称", nullable=False)
     email: Mapped[str | None] = mapped_column(String(50), comment="邮箱")
     phone: Mapped[str | None] = mapped_column(String(50), comment="手机号")
-    avatar: Mapped[str | None] = mapped_column(String(50), comment="头像")
+    avatar: Mapped[str | None] = mapped_column(String(255), comment="头像")
     status: Mapped[int] = mapped_column(default=1, comment="状态：0-禁用，1-正常")
 
     roles: Mapped[list[Role]] = relationship(

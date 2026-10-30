@@ -1,120 +1,48 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Dropdown, Layout as AntLayout, Menu, type MenuProps } from 'antd'
 import {
-  ApiOutlined,
-  AppstoreOutlined,
+  BookOutlined,
+  CalendarOutlined,
   CommentOutlined,
   DownOutlined,
-  FileDoneOutlined,
-  HomeOutlined,
-  IdcardOutlined,
   LockOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
-  MenuOutlined,
   MenuUnfoldOutlined,
-  ProfileOutlined,
   RobotOutlined,
-  SettingOutlined,
   TeamOutlined,
   UserOutlined
 } from '@ant-design/icons'
 
 import { useUser } from '@/store/UserContext'
 import { logout } from '@/utils/auth'
-import type { MenuNode } from '@/types'
 
 const { Header, Sider, Content } = AntLayout
 
 const COLLAPSE_KEY = 'lab-sidebar-collapsed'
 const ASIDE_EXPANDED = 220
 const ASIDE_COLLAPSED = 64
-const HOME_PATH = '/manager/home'
 
-/** Element Plus 图标名 -> Ant Design 图标，兼容后端已有菜单数据 */
-const iconMap: Record<string, ReactNode> = {
-  Menu: <MenuOutlined />,
-  House: <HomeOutlined />,
-  HomeFilled: <HomeOutlined />,
-  Setting: <SettingOutlined />,
-  User: <UserOutlined />,
-  Avatar: <UserOutlined />,
-  OfficeBuilding: <TeamOutlined />,
-  Tickets: <ProfileOutlined />,
-  DocumentChecked: <FileDoneOutlined />,
-  ChatDotRound: <CommentOutlined />,
-  Grid: <AppstoreOutlined />,
-  Cpu: <ApiOutlined />
-}
-
-/** 按菜单 icon 名解析为 Ant Design 图标 */
-function resolveIcon(name?: string | null): ReactNode {
-  if (!name) return <MenuOutlined />
-  return iconMap[name] ?? <MenuOutlined />
-}
-
-/** 侧栏只展示 visible !== 0 的菜单 */
-function filterVisible(list: MenuNode[]): MenuNode[] {
-  return list
-    .filter((item) => item.visible !== 0)
-    .map((item) => ({
-      ...item,
-      children: item.children ? filterVisible(item.children) : []
-    }))
-}
-
-/** 菜单树转为 antd Menu items */
-function toMenuItems(list: MenuNode[]): NonNullable<MenuProps['items']> {
-  return list.map((item) => {
-    const key = item.path || `menu-${item.id}`
-    const icon = resolveIcon(item.icon)
-    if (item.children?.length) {
-      return {
-        key,
-        icon,
-        label: item.name,
-        children: toMenuItems(item.children)
-      }
-    }
-    return {
-      key,
-      icon,
-      label: item.name,
-      disabled: !item.path
-    }
-  })
-}
-
-/** 菜单树中是否包含指定 path */
-function hasPath(list: MenuNode[], path: string): boolean {
-  return list.some(
-    (item) => item.path === path || (item.children?.length ? hasPath(item.children, path) : false)
-  )
-}
+/** 侧边栏对所有登录用户一致，不做菜单级权限过滤 */
+const APP_MENU_ITEMS: NonNullable<MenuProps['items']> = [
+  { key: '/manager/chat', icon: <CommentOutlined />, label: '智能对话' },
+  { key: '/manager/rooms', icon: <TeamOutlined />, label: '会议室看板' },
+  { key: '/manager/bookings', icon: <CalendarOutlined />, label: '我的预约' },
+  { key: '/manager/knowledge', icon: <BookOutlined />, label: '知识库' }
+]
 
 export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { userInfo, menus, loadMenus } = useUser()
+  const { userInfo } = useUser()
 
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(COLLAPSE_KEY) === '1'
   )
 
-  const sidebarMenus = useMemo(() => filterVisible(menus), [menus])
-
-  const menuItems = useMemo<MenuProps['items']>(() => {
-    const items = toMenuItems(sidebarMenus)
-    if (!hasPath(sidebarMenus, HOME_PATH)) {
-      items.unshift({ key: HOME_PATH, icon: <HomeOutlined />, label: '首页' })
-    }
-    return items
-  }, [sidebarMenus])
-
   const dropdownItems = useMemo<MenuProps['items']>(
     () => [
-      { key: 'profile', icon: <IdcardOutlined />, label: '个人信息' },
       { key: 'password', icon: <LockOutlined />, label: '修改密码' },
       { type: 'divider' },
       { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', danger: true }
@@ -138,19 +66,13 @@ export default function Layout() {
   }
 
   function handleUserMenuClick({ key }: { key: string }) {
-    if (key === 'profile') {
-      navigate('/manager/profile')
-    } else if (key === 'password') {
+    if (key === 'password') {
       navigate('/manager/password')
     } else if (key === 'logout') {
       logout()
       navigate('/login', { replace: true })
     }
   }
-
-  useEffect(() => {
-    void loadMenus()
-  }, [loadMenus])
 
   return (
     <AntLayout className="app-shell">
@@ -187,7 +109,7 @@ export default function Layout() {
           <div className="sider-inner">
             <Menu
               mode="inline"
-              items={menuItems}
+              items={APP_MENU_ITEMS}
               selectedKeys={[location.pathname]}
               onClick={handleMenuClick}
               inlineCollapsed={collapsed}

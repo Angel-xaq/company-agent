@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 
 
 class BusinessException(Exception):
-    """自定义的业务异常"""
+    """自定义业务异常，code 直接作为 HTTP 状态码。"""
 
-    def __init__(self, message: str, code: int = 500):
+    def __init__(self, message: str, code: int = 400):
         self.message = message
         self.code = code
         super().__init__(message)
@@ -27,9 +27,16 @@ class UnauthorizedException(Exception):
 
 
 async def business_exception_handler(request: Request, exc: BusinessException):
-    """自定义业务异常处理器"""
+    """业务异常处理器：业务码直接映射为 HTTP 状态码。"""
+    if exc.code >= 500:
+        logger.error(
+            "业务异常(5xx)：%s %s | %s",
+            request.method,
+            request.url.path,
+            exc.message,
+        )
     return JSONResponse(
-        status_code=200,
+        status_code=exc.code,
         content=Response.error(code=exc.code, message=exc.message).model_dump(),
     )
 

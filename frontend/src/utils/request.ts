@@ -91,11 +91,12 @@ service.interceptors.request.use(
   (err) => Promise.reject(err)
 )
 
-// 响应拦截器：统一处理业务码、401 自动续期与 HTTP 错误
+// 响应拦截器：成功响应解包；401 自动续期；其他 HTTP 错误统一提示
 service.interceptors.response.use(
   (res) => {
     const data = res.data as ApiResponse
     if (data.code !== 200) {
+      // 防御性兼容：正常情况下后端错误已使用非 2xx 状态码
       if (data.code === 401) {
         feedback.error(data.message || '登录已失效')
         logout()
@@ -113,7 +114,7 @@ service.interceptors.response.use(
     const original = err.config as InternalAxiosRequestConfig | undefined
     const status = err.response?.status as number | undefined
 
-    if ( // 业务接口401进入这个地方
+    if ( // 业务接口的 HTTP 401 才进入自动续期
       status === 401 &&
       original &&
       !original._retry &&

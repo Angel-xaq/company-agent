@@ -103,7 +103,9 @@ def _ensure_not_removing_last_admin(
     will_have_admin = any(r.code == ROLE_ADMIN for r in new_roles)
     if had_admin and not will_have_admin:
         if _count_other_admins(db, exclude_user_id=user.id) == 0:
-            raise BusinessException(message="不能移除系统中最后一个管理员角色")
+            raise BusinessException(
+                message="不能移除系统中最后一个管理员角色", code=409
+            )
 
 
 def get_user_info(user: User) -> UserResponse:
@@ -152,15 +154,15 @@ def create_user(db: Session, data: UserCreateRequest):
     """新增用户（无角色时默认绑定员工）"""
     exist = db.query(User).filter(User.username == data.username).first()
     if exist:
-        raise BusinessException(message="账号已存在")
+        raise BusinessException(message="账号已存在", code=409)
 
     roles = _resolve_roles(db, data.role_ids, data.role)
     if not roles:
-        default_role = (
-            db.query(Role).filter(Role.code == DEFAULT_ROLE_CODE).first()
-        )
+        default_role = db.query(Role).filter(Role.code == DEFAULT_ROLE_CODE).first()
         if not default_role:
-            raise BusinessException(message="默认员工角色不存在，请先初始化 RBAC")
+            raise BusinessException(
+                message="默认员工角色不存在，请先初始化 RBAC", code=500
+            )
         roles = [default_role]
 
     user = User(
@@ -182,7 +184,7 @@ def create_user(db: Session, data: UserCreateRequest):
         .first()
     )
     if refreshed is None:
-        raise BusinessException(message="用户创建失败")
+        raise BusinessException(message="用户创建失败", code=500)
     return user_to_response(refreshed)
 
 
@@ -195,7 +197,7 @@ def update_user(db: Session, user_id: int, data: UserUpdateRequest):
         .first()
     )
     if not user:
-        raise BusinessException(message="用户不存在")
+        raise BusinessException(message="用户不存在", code=404)
 
     payload = data.model_dump(exclude_none=True, exclude={"role", "role_ids"})
     for field, value in payload.items():
@@ -217,14 +219,14 @@ def update_user(db: Session, user_id: int, data: UserUpdateRequest):
         .first()
     )
     if refreshed is None:
-        raise BusinessException(message="用户不存在")
+        raise BusinessException(message="用户不存在", code=404)
     return user_to_response(refreshed)
 
 
 def delete_user(db: Session, user_id: int, current_user: User):
     """删除用户（不可删本人或末位管理员）"""
     if user_id == current_user.id:
-        raise BusinessException(message="不能删除当前登录的账号")
+        raise BusinessException(message="不能删除当前登录的账号", code=409)
     user = (
         db.query(User)
         .options(joinedload(User.roles))
@@ -232,10 +234,10 @@ def delete_user(db: Session, user_id: int, current_user: User):
         .first()
     )
     if not user:
-        raise BusinessException(message="用户不存在")
+        raise BusinessException(message="用户不存在", code=404)
     if any(r.code == ROLE_ADMIN for r in (user.roles or [])):
         if _count_other_admins(db, exclude_user_id=user.id) == 0:
-            raise BusinessException(message="不能删除系统中最后一个管理员")
+            raise BusinessException(message="不能删除系统中最后一个管理员", code=409)
     db.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete(
         synchronize_session=False
     )

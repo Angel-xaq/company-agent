@@ -47,8 +47,7 @@ def _to_response(
         room_id=reservation.room_id,
         room_name=room_name or (reservation.room.name if reservation.room else ""),
         user_id=reservation.user_id,
-        user_name=user_name
-        or (reservation.user.name if reservation.user else ""),
+        user_name=user_name or (reservation.user.name if reservation.user else ""),
         title=reservation.title,
         purpose=reservation.purpose,
         attendees=reservation.attendees,
@@ -177,7 +176,7 @@ def _lock_room(db: Session, room_id: int) -> MeetingRoom:
     if not room:
         raise BusinessException(message="会议室不存在", code=404)
     if room.status != 1:
-        raise BusinessException(message="会议室已停用")
+        raise BusinessException(message="会议室已停用", code=409)
     return room
 
 
@@ -231,9 +230,9 @@ def update_reservation(
     if reservation.user_id != user.id and not is_admin:
         raise BusinessException(message="无权限操作该预约", code=403)
     if reservation.status != RESERVATION_CONFIRMED:
-        raise BusinessException(message="该预约已取消，无法修改")
+        raise BusinessException(message="该预约已取消，无法修改", code=409)
     if reservation.start_time <= now_local() and not is_admin:
-        raise BusinessException(message="预约已开始，无法修改")
+        raise BusinessException(message="预约已开始，无法修改", code=409)
 
     target_room_id = data.room_id or reservation.room_id
     room = _lock_room(db, target_room_id)
@@ -250,9 +249,7 @@ def update_reservation(
         attendees=attendees,
         exclude_id=reservation.id,
     )
-    _ensure_no_conflict(
-        db, room.id, start, end, exclude_id=reservation.id
-    )
+    _ensure_no_conflict(db, room.id, start, end, exclude_id=reservation.id)
 
     if data.title is not None:
         title = data.title.strip()
@@ -286,9 +283,9 @@ def cancel_reservation(
     if reservation.user_id != user.id and not is_admin:
         raise BusinessException(message="无权限操作该预约", code=403)
     if reservation.status != RESERVATION_CONFIRMED:
-        raise BusinessException(message="该预约已取消")
+        raise BusinessException(message="该预约已取消", code=409)
     if not is_admin and reservation.start_time <= now_local():
-        raise BusinessException(message="预约已开始，无法取消")
+        raise BusinessException(message="预约已开始，无法取消", code=409)
 
     reservation.status = RESERVATION_CANCELLED
     reservation.cancelled_at = now_local()

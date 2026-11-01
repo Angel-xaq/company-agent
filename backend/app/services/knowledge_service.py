@@ -62,11 +62,7 @@ def _split_text(text: str, page_no: int | None = None) -> list[dict]:
     if buffer:
         chunks.append(buffer)
 
-    return [
-        {"content": chunk, "page_no": page_no}
-        for chunk in chunks
-        if chunk.strip()
-    ]
+    return [{"content": chunk, "page_no": page_no} for chunk in chunks if chunk.strip()]
 
 
 def extract_chunks(file_path: str, file_type: str) -> list[dict]:
@@ -138,14 +134,16 @@ def save_document(
     """校验并保存上传文件，创建待索引文档。"""
     ext = Path(original_filename).suffix.lower().lstrip(".")
     if ext not in ALLOWED_EXTENSIONS:
-        raise BusinessException(message="仅支持 PDF、DOCX、Markdown、TXT 文件")
+        raise BusinessException(
+            message="仅支持 PDF、DOCX、Markdown、TXT 文件", code=415
+        )
     if not content:
         raise BusinessException(message="文件内容为空")
 
     max_bytes = settings.KNOWLEDGE_MAX_MB * 1024 * 1024
     if len(content) > max_bytes:
         raise BusinessException(
-            message=f"文件不能超过 {settings.KNOWLEDGE_MAX_MB} MB"
+            message=f"文件不能超过 {settings.KNOWLEDGE_MAX_MB} MB", code=413
         )
 
     category = category if category in ALLOWED_CATEGORIES else "general"
@@ -264,7 +262,9 @@ def index_document(document_id: int) -> None:
         document.status = DOC_READY
         document.error_message = None
         db.commit()
-        logger.info("知识库索引完成：document_id=%s chunks=%s", document.id, len(chunks))
+        logger.info(
+            "知识库索引完成：document_id=%s chunks=%s", document.id, len(chunks)
+        )
     except Exception as exc:
         db.rollback()
         logger.exception("知识库索引失败：document_id=%s", document_id)

@@ -119,11 +119,11 @@ def register(db: Session, data: RegisterRequest) -> None:
     """注册用户并绑定默认员工角色"""
     exists = db.query(User).filter(User.username == data.username).first()
     if exists:
-        raise BusinessException(message="账号已存在")
+        raise BusinessException(message="账号已存在", code=409)
 
     default_role = db.query(Role).filter(Role.code == DEFAULT_ROLE_CODE).first()
     if not default_role:
-        raise BusinessException(message="默认员工角色不存在，请先初始化 RBAC")
+        raise BusinessException(message="默认员工角色不存在，请先初始化 RBAC", code=500)
 
     user = User(
         username=data.username,

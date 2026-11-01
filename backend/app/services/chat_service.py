@@ -4,7 +4,7 @@ import re
 import secrets
 from datetime import date as date_type
 from datetime import datetime, timedelta
-from typing import Any, Generator, TypedDict
+from typing import Any, Generator, Literal, TypedDict
 
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
@@ -129,10 +129,12 @@ TOOLS: list[dict[str, Any]] = [
 
 
 def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+    return (
+        f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+    )
 
 
-def _parse_args(raw: str | None) -> dict:
+def _parse_args(raw: str | None) -> dict[str, Any]:
     try:
         value = json.loads(raw or "{}")
         return value if isinstance(value, dict) else {}
@@ -180,7 +182,9 @@ def list_sessions(db: Session, user_id: int) -> list[ChatSessionResponse]:
     return [_session_response(item) for item in sessions]
 
 
-def create_session(db: Session, user_id: int, title: str = "新对话") -> ChatSessionResponse:
+def create_session(
+    db: Session, user_id: int, title: str = "新对话"
+) -> ChatSessionResponse:
     session = ChatSession(user_id=user_id, title=title[:100] or "新对话")
     db.add(session)
     db.commit()
@@ -216,7 +220,11 @@ def get_messages(
         ChatMessageResponse(
             id=item.id,
             role=item.role,
-            content=_clean_answer(item.content) if item.role == "assistant" else item.content,
+            content=(
+                _clean_answer(item.content)
+                if item.role == "assistant"
+                else item.content
+            ),
             citations=item.citations,
             create_time=item.create_time,
         )
@@ -270,10 +278,7 @@ def _history(db: Session, session_id: int) -> list[dict]:
         .limit(12)
         .all()
     )
-    return [
-        {"role": item.role, "content": item.content}
-        for item in reversed(rows)
-    ]
+    return [{"role": item.role, "content": item.content} for item in reversed(rows)]
 
 
 def _system_prompt(user: User) -> str:
@@ -373,7 +378,9 @@ def _filter_available(board, start: str, end: str) -> list[int]:
     return available
 
 
-def _execute_read_tool(db: Session, user: User, name: str, args: dict) -> dict:
+def _execute_read_tool(
+    db: Session, user: User, name: str, args: dict[str, Any]
+) -> dict[str, Any]:
     if name == "query_rooms":
         day: date_type | None = None
         raw_date = args.get("date")
@@ -408,11 +415,16 @@ def _execute_read_tool(db: Session, user: User, name: str, args: dict) -> dict:
         start = args.get("start_time")
         end = args.get("end_time")
         if start and end:
-            result["available_room_ids"] = _filter_available(board, str(start), str(end))
+            result["available_room_ids"] = _filter_available(
+                board, str(start), str(end)
+            )
         return result
 
     if name == "list_my_reservations":
-        scope = args.get("scope") if args.get("scope") in ("upcoming", "history") else "upcoming"
+        raw_scope = str(args.get("scope") or "upcoming")
+        scope: Literal["upcoming", "history"] = (
+            "history" if raw_scope == "history" else "upcoming"
+        )
         page = reservation_service.list_my_reservations(
             db, user, scope=scope, page=1, page_size=20
         )
@@ -523,6 +535,7 @@ def _build_chat_graph(db: Session, user: User, session: ChatSession):
                     writer({"event": "delta", "data": {"content": prompt}})
                 break
 
+            result: dict[str, Any]
             try:
                 result = _execute_read_tool(db, user, name, args)
             except Exception as exc:
@@ -530,8 +543,12 @@ def _build_chat_graph(db: Session, user: User, session: ChatSession):
                 result = {"error": str(exc)}
 
             if name == "search_knowledge":
-                enriched: list[dict] = []
-                for item in result.get("items", []):
+                raw_items = result.get("items")
+                items = raw_items if isinstance(raw_items, list) else []
+                enriched: list[dict[str, Any]] = []
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
                     key = (item.get("document_id"), item.get("chunk_index"))
                     if key not in citation_by_key:
                         citation_by_key[key] = {
@@ -609,7 +626,7 @@ def _build_chat_graph(db: Session, user: User, session: ChatSession):
     def after_tools(state: AgentState) -> str:
         if state.get("pending") is not None:
             return "finalize"
-        if state.get("rounds", 0) >= 3:
+        if state.get("rounds", 0) >= 3:  # TODO：是否调整次数
             return "finalize"
         return "agent"
 
@@ -632,9 +649,7 @@ SOURCE_LINE_RE = re.compile(r"^(\[\d+\])+\s*\S{0,40}$")
 SOURCE_HEADING_RE = re.compile(
     r"^(#+\s*)?(\*\*)?(来源|参考来源|参考资料|引用来源)(\*\*)?[:：]?$"
 )
-SOURCE_PREFIX_RE = re.compile(
-    r"^(\*\*)?(来源|参考来源|参考资料|引用来源)(\*\*)?[:：]"
-)
+SOURCE_PREFIX_RE = re.compile(r"^(\*\*)?(来源|参考来源|参考资料|引用来源)(\*\*)?[:：]")
 
 
 def _clean_answer(answer: str) -> str:
@@ -652,9 +667,7 @@ def _clean_answer(answer: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _filter_citations(
-    answer: str, citations: list[dict]
-) -> tuple[str, list[dict]]:
+def _filter_citations(answer: str, citations: list[dict]) -> tuple[str, list[dict]]:
     """只保留答案实际引用的来源，并按首次出现顺序重编号为 [1]、[2]…"""
     matches = CITATION_MARKER_RE.findall(answer)
     if not matches:
@@ -860,7 +873,7 @@ def stream_chat(
             for event in graph.stream(
                 state,
                 stream_mode="custom",
-                config={"recursion_limit": 8},
+                config={"recursion_limit": 8},  # TODO: 这个8是自己配的
             ):
                 if not isinstance(event, dict):
                     continue
@@ -935,11 +948,11 @@ def confirm_action(db: Session, user: User, token: str, approve: bool) -> str:
     if action is None:
         raise BusinessException(message="操作不存在或已失效", code=404)
     if action.status != "pending":
-        raise BusinessException(message="该操作已处理")
+        raise BusinessException(message="该操作已处理", code=409)
     if action.expire_at < now_local():
         action.status = "expired"
         db.commit()
-        raise BusinessException(message="操作已过期，请重新发起")
+        raise BusinessException(message="操作已过期，请重新发起", code=410)
 
     if not approve:
         action.status = "rejected"
@@ -963,9 +976,7 @@ def confirm_action(db: Session, user: User, token: str, approve: bool) -> str:
         except Exception as exc:
             raise BusinessException(message="预约参数无效，请重新描述预约时间") from exc
 
-        result = reservation_service.create_reservation(
-            db, room_id, user, payload
-        )
+        result = reservation_service.create_reservation(db, room_id, user, payload)
 
         action.status = "confirmed"
         db.commit()

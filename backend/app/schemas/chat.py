@@ -25,3 +25,13 @@ class ChatMessageResponse(BaseModel):
 
 class ChatActionRequest(BaseModel):
     approve: bool = True
+
+
+class ChatPendingActionResponse(BaseModel):
+    """待确认操作：用于刷新页面后回挂确认卡片。"""
+
+    token: str
+    tool_name: str
+    params: dict
+    summary: str
+    expire_at: datetime

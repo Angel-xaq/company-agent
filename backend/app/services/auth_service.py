@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.common.exceptions import BusinessException, UnauthorizedException
+from app.common.exceptions import BusinessException
 from app.config import settings
 from app.core.constants import DEFAULT_ROLE_CODE
 from app.models.refresh_token import RefreshToken
@@ -20,7 +20,9 @@ def _hash_refresh_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
-def _create_refresh_token(db: Session, user_id: int, *, commit: bool = True) -> str:
+def _create_refresh_token(
+    db: Session, user_id: int, *, commit: bool = True
+) -> str:
     raw_token = secrets.token_urlsafe(48)
     expires_at = datetime.now(timezone.utc) + timedelta(
         days=settings.JWT_REFRESH_EXPIRE_DAYS
@@ -47,10 +49,10 @@ def login(db: Session, data: LoginRequest) -> tuple[LoginResponse, str]:
     )
 
     if not user or not verify_password(data.password, user.password):
-        raise UnauthorizedException(message="账号或密码错误")
+        raise BusinessException(message="账号或密码错误")
 
     if user.status != 1:
-        raise UnauthorizedException(message="账号被禁用")
+        raise BusinessException(message="账号被禁用")
 
     access_token = create_access_token(user.id)
     refresh_token = _create_refresh_token(db, user.id)
@@ -60,7 +62,9 @@ def login(db: Session, data: LoginRequest) -> tuple[LoginResponse, str]:
     )
 
 
-def refresh_access_token(db: Session, raw_token: str) -> tuple[LoginResponse, str]:
+def refresh_access_token(
+    db: Session, raw_token: str
+) -> tuple[LoginResponse, str]:
     """校验 Refresh Token，轮换后返回新的 Access Token 与 Refresh Token。"""
     now = datetime.now(timezone.utc)
     token = (
@@ -73,7 +77,7 @@ def refresh_access_token(db: Session, raw_token: str) -> tuple[LoginResponse, st
         .first()
     )
     if token is None or token.expires_at <= now:
-        raise UnauthorizedException(message="登录已失效，请重新登录")
+        raise BusinessException(message="登录已失效，请重新登录", code=401)
 
     user = (
         db.query(User)
@@ -84,7 +88,7 @@ def refresh_access_token(db: Session, raw_token: str) -> tuple[LoginResponse, st
     if user is None or user.status != 1:
         token.revoked_at = now
         db.commit()
-        raise UnauthorizedException(message="账号不可用，请重新登录")
+        raise BusinessException(message="账号不可用，请重新登录", code=401)
 
     token.revoked_at = now
     db.flush()
@@ -119,11 +123,13 @@ def register(db: Session, data: RegisterRequest) -> None:
     """注册用户并绑定默认员工角色"""
     exists = db.query(User).filter(User.username == data.username).first()
     if exists:
-        raise BusinessException(message="账号已存在", code=409)
+        raise BusinessException(message="账号已存在")
 
-    default_role = db.query(Role).filter(Role.code == DEFAULT_ROLE_CODE).first()
+    default_role = (
+        db.query(Role).filter(Role.code == DEFAULT_ROLE_CODE).first()
+    )
     if not default_role:
-        raise BusinessException(message="默认员工角色不存在，请先初始化 RBAC", code=500)
+        raise BusinessException(message="默认员工角色不存在，请先初始化 RBAC")
 
     user = User(
         username=data.username,

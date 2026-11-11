@@ -49,15 +49,6 @@ function isAuthEndpoint(url?: string) {
   )
 }
 
-/** 登录/注册失败只提示错误，不应触发登出和跳转 */
-function isCredentialEndpoint(url?: string) {
-  if (!url) return false
-  return (
-    url.includes('/api/auth/login') ||
-    url.includes('/api/auth/register')
-  )
-}
-
 /** 使用 HttpOnly Cookie 中的 Refresh Token 换取新的 Access Token */
 async function refreshAccessToken(): Promise<string | null> {
   try {
@@ -91,12 +82,11 @@ service.interceptors.request.use(
   (err) => Promise.reject(err)
 )
 
-// 响应拦截器：成功响应解包；401 自动续期；其他 HTTP 错误统一提示
+// 响应拦截器：统一处理业务码、401 自动续期与 HTTP 错误
 service.interceptors.response.use(
   (res) => {
     const data = res.data as ApiResponse
     if (data.code !== 200) {
-      // 防御性兼容：正常情况下后端错误已使用非 2xx 状态码
       if (data.code === 401) {
         feedback.error(data.message || '登录已失效')
         logout()
@@ -114,7 +104,7 @@ service.interceptors.response.use(
     const original = err.config as InternalAxiosRequestConfig | undefined
     const status = err.response?.status as number | undefined
 
-    if ( // 业务接口的 HTTP 401 才进入自动续期
+    if (
       status === 401 &&
       original &&
       !original._retry &&
@@ -141,14 +131,9 @@ service.interceptors.response.use(
     if (err.response) {
       const msg = err.response.data?.message as string | undefined
       if (status === 401) {
-        if (isCredentialEndpoint(original?.url)) {
-          // 登录/注册失败：展示后端真实原因，不清除已有会话
-          feedback.error(msg || '账号或密码错误')
-        } else {
-          feedback.error('登录状态已失效，请重新登录')
-          logout()
-          redirectToLogin()
-        }
+        feedback.error('登录状态已失效，请重新登录')
+        logout()
+        redirectToLogin()
       } else if (status === 403) {
         feedback.error(msg || '无权限访问')
       } else {

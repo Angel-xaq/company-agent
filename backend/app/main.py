@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +19,10 @@ from app.common.exceptions import (
     validation_exception_handler,
     global_exception_handler,
 )
+from app.services.checkpointer import init_checkpointer, shutdown_checkpointer
+from app.services.chat_service import run_action_sweeper, sweep_stale_actions
+
+logger = logging.getLogger(__name__)
 
 origins = [item.strip() for item in settings.CORS_ORIGINS.split(",") if item.strip()]
 
@@ -25,7 +31,20 @@ origins = [item.strip() for item in settings.CORS_ORIGINS.split(",") if item.str
 async def lifespan(app: FastAPI):
     # 统一建表
     Base.metadata.create_all(bind=engine)
-    yield
+    # 预热 LangGraph checkpointer（postgres 后端会顺带建表）
+    init_checkpointer()
+    # 回收上一次进程异常退出时遗留的 executing 待确认操作
+    try:
+        sweep_stale_actions()
+    except Exception:
+        logger.warning("启动时回收待确认操作失败", exc_info=True)
+
+    sweeper = asyncio.create_task(run_action_sweeper())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
+        shutdown_checkpointer()
 
 
 app = FastAPI(

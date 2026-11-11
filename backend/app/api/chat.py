@@ -71,13 +71,34 @@ def stream_chat(
     )
 
 
+@router.get("/actions/pending")
+def get_pending_actions(
+    session_id: int,
+    current_user: User = Depends(require_permissions(PERM_CHAT_USE)),
+    db: Session = Depends(get_db),
+):
+    """当前会话待确认的操作，用于刷新页面后回挂确认卡片。"""
+    return Response.success(
+        data=chat_service.list_pending_actions(db, current_user.id, session_id)
+    )
+
+
 @router.post("/actions/{token}")
 def confirm_action(
     token: str,
     data: ChatActionRequest,
     current_user: User = Depends(require_permissions(PERM_CHAT_USE)),
-    db: Session = Depends(get_db),
 ):
-    """确认或拒绝待执行的预约操作。"""
-    message = chat_service.confirm_action(db, current_user, token, data.approve)
-    return Response.success(data={"message": message})
+    """确认或拒绝待执行操作，从 checkpoint 恢复同一个对话线程。
+
+    返回 SSE，事件类型与 /chat/stream 完全一致（delta / citation / action / done / error）。
+    """
+    return StreamingResponse(
+        chat_service.confirm_action_stream(current_user.id, token, data.approve),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

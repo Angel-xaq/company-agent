@@ -27,5 +27,7 @@ openai>=1.40.0
 chromadb>=0.5.0
 # Agent 编排
 langgraph>=1.2.0
+# CHECKPOINT_BACKEND=postgres 时用于持久化图状态
+langgraph-checkpoint-postgres>=2.0.9
 # 本地中文 Embedding（BAAI/bge-m3），仅 EMBEDDING_PROVIDER=local 时需要
 sentence-transformers>=3.0.0

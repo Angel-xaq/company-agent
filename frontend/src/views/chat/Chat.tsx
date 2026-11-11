@@ -34,6 +34,7 @@ import remarkGfm from 'remark-gfm'
 import {
   confirmActionApi,
   getMessagesApi,
+  getPendingActionsApi,
   getSessionsApi,
   streamChatApi
 } from '@/api/chat'
@@ -187,25 +188,44 @@ export default function Chat() {
 
     let cancelled = false
     setLoadingMessages(true)
-    getMessagesApi(sessionId)
-      .then((res) => {
+
+    const load = async () => {
+      try {
+        // 历史消息与待确认操作并行拉取，待确认操作失败不影响历史展示
+        const [messageRes, pendingRes] = await Promise.all([
+          getMessagesApi(sessionId),
+          getPendingActionsApi(sessionId).catch(() => null)
+        ])
         if (cancelled) return
-        setMessages(
-          res.data.map((message) => ({
-            ...message,
-            citations: message.citations?.map((citation, index) => ({
-              ...citation,
-              index: citation.index ?? index + 1
-            }))
+
+        const loaded = messageRes.data.map((message) => ({
+          ...message,
+          citations: message.citations?.map((citation, index) => ({
+            ...citation,
+            index: citation.index ?? index + 1
           }))
-        )
-      })
-      .catch(() => {
+        }))
+
+        const pending = pendingRes?.data?.[0]
+        if (pending) {
+          // 挂到最近一条助手消息上（确认前的引导语就存在这条消息里）
+          for (let index = loaded.length - 1; index >= 0; index -= 1) {
+            if (loaded[index].role === 'assistant') {
+              loaded[index] = { ...loaded[index], pendingAction: pending }
+              break
+            }
+          }
+        }
+
+        setMessages(loaded)
+      } catch {
         // 错误提示由请求拦截器统一处理
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoadingMessages(false)
-      })
+      }
+    }
+
+    void load()
     return () => {
       cancelled = true
     }
@@ -218,7 +238,7 @@ export default function Chat() {
   const send = useCallback(
     async (raw?: string) => {
       const text = (raw ?? input).trim()
-      if (!text || streaming) return
+      if (!text || streaming || confirmingToken) return
 
       const assistantId = `a-${Date.now()}`
       setMessages((prev) => [
@@ -313,7 +333,7 @@ export default function Chat() {
         await loadSessions()
       }
     },
-    [input, loadSessions, sessionId, streaming]
+    [input, loadSessions, sessionId, streaming, confirmingToken]
   )
 
   async function handleConfirm(
@@ -321,23 +341,85 @@ export default function Chat() {
     action: ChatPendingAction,
     approve: boolean
   ) {
+    if (streaming || confirmingToken) return
     setConfirmingToken(action.token)
+
+    const assistantId = `a-${Date.now()}`
+    setMessages((prev) => [
+      ...prev.map((item) =>
+        item.id === messageId ? { ...item, pendingAction: undefined } : item
+      ),
+      { id: assistantId, role: 'assistant', content: '', citations: [] }
+    ])
+
+    let received = false
     try {
-      const res = await confirmActionApi(action.token, approve)
-      setMessages((prev) => [
-        ...prev.map((item) =>
-          item.id === messageId ? { ...item, pendingAction: undefined } : item
-        ),
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          content: res.data.message
+      // 确认后后端会从 checkpoint 恢复同一个对话线程，继续以 SSE 返回结果
+      await confirmActionApi(action.token, approve, {
+        onMeta: () => {},
+        onDelta: (data) => {
+          received = true
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantId
+                ? { ...item, content: item.content + data.content }
+                : item
+            )
+          )
+        },
+        onCitation: (data) => {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantId
+                ? { ...item, citations: [...(item.citations ?? []), data] }
+                : item
+            )
+          )
+        },
+        onAction: (data) => {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantId ? { ...item, pendingAction: data } : item
+            )
+          )
+        },
+        onDone: (data) => {
+          if (data.answer) {
+            setMessages((prev) =>
+              prev.map((item) =>
+                item.id === assistantId
+                  ? { ...item, content: data.answer as string }
+                  : item
+              )
+            )
+          }
+        },
+        onError: (message) => {
+          received = true
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === assistantId
+                ? { ...item, content: item.content || message }
+                : item
+            )
+          )
         }
-      ])
-      feedback.success(approve ? '操作已完成' : '已取消操作')
+      })
       void loadSessions()
-    } catch {
-      // 错误提示由请求拦截器统一处理
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '操作失败，请稍后重试'
+      // 没有拿到任何结果时恢复确认卡片，让用户可以重试
+      if (!received) {
+        setMessages((prev) =>
+          prev
+            .filter((item) => item.id !== assistantId || item.content)
+            .map((item) =>
+              item.id === messageId ? { ...item, pendingAction: action } : item
+            )
+        )
+      }
+      feedback.error(message)
     } finally {
       setConfirmingToken(null)
     }
@@ -511,7 +593,7 @@ export default function Chat() {
                 void send()
               }
             }}
-            disabled={streaming}
+            disabled={streaming || Boolean(confirmingToken)}
           />
           {streaming ? (
             <Button

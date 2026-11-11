@@ -174,6 +174,8 @@ export interface ChatPendingAction {
   tool_name: string
   params: Record<string, unknown>
   summary: string
+  /** 确认有效期，超时后令牌失效 */
+  expire_at?: string
 }
 
 /** 对话消息（前端展示用） */

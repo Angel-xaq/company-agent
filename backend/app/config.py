@@ -47,6 +47,20 @@ class Settings(BaseSettings):
     BOOKING_MAX_DAYS: int = 30
     BOOKING_MAX_PER_DAY: int = 3
 
+    # 智能对话 / LangGraph
+    # memory：进程重启后线程状态丢失；postgres：写入现有 PostgreSQL
+    CHECKPOINT_BACKEND: str = "memory"
+    CHECKPOINT_DSN: str = ""  # 留空则复用 DATABASE_URL
+    CHAT_RECURSION_LIMIT: int = 24
+    CHAT_MAX_TOOL_ROUNDS: int = 3
+    # 超过阈值触发摘要节点，之后只保留最近若干条原文
+    CHAT_HISTORY_MAX_MESSAGES: int = 16
+    CHAT_HISTORY_MAX_CHARS: int = 4000
+    CHAT_HISTORY_KEEP_MESSAGES: int = 6
+    # 写操作确认：超过该时长仍处于 executing 视为进程中断，回收为 failed
+    CHAT_ACTION_EXECUTING_TIMEOUT_MINUTES: int = 10
+    CHAT_ACTION_SWEEP_INTERVAL_SECONDS: int = 300
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",

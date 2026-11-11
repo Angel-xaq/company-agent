@@ -64,24 +64,25 @@ export function deleteSessionApi(sessionId: number) {
   })
 }
 
-/** 确认或拒绝待执行操作 */
-export function confirmActionApi(token: string, approve: boolean) {
-  return request<{ message: string }>({
-    url: `/api/chat/actions/${token}`,
-    method: 'post',
-    data: { approve }
+/** 当前会话待确认的写操作（刷新页面后回挂确认卡片） */
+export function getPendingActionsApi(sessionId: number) {
+  return request<ChatPendingAction[]>({
+    url: '/api/chat/actions/pending',
+    method: 'get',
+    params: { session_id: sessionId }
   })
 }
 
-/** SSE 流式对话（Axios 不支持流式读取，因此使用 fetch） */
-export async function streamChatApi(
-  payload: { session_id: number | null; message: string },
+/** 读取后端 SSE 流（Axios 不支持流式读取，因此使用 fetch） */
+async function readSse(
+  path: string,
+  payload: unknown,
   handlers: StreamHandlers,
   signal?: AbortSignal
 ) {
   const base = import.meta.env.VITE_API_BASE_URL || ''
   const token = getToken()
-  const response = await fetch(`${base}/api/chat/stream`, {
+  const response = await fetch(`${base}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -142,4 +143,23 @@ export async function streamChatApi(
       }
     }
   }
+}
+
+/** SSE 流式对话 */
+export async function streamChatApi(
+  payload: { session_id: number | null; message: string },
+  handlers: StreamHandlers,
+  signal?: AbortSignal
+) {
+  return readSse('/api/chat/stream', payload, handlers, signal)
+}
+
+/** 确认/拒绝待执行操作：同样是 SSE，事件类型与对话流一致 */
+export async function confirmActionApi(
+  token: string,
+  approve: boolean,
+  handlers: StreamHandlers,
+  signal?: AbortSignal
+) {
+  return readSse(`/api/chat/actions/${token}`, { approve }, handlers, signal)
 }

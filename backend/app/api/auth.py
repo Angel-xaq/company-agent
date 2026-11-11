@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request, Response as FastAPIResponse
 from sqlalchemy.orm import Session
 
-from app.common.exceptions import UnauthorizedException
+from app.common.exceptions import BusinessException
 from app.common.response import Response
 from app.config import settings
 from app.database import get_db
@@ -54,7 +54,7 @@ def refresh(
     """使用 HttpOnly Cookie 中的 Refresh Token 换取新的 Access Token。"""
     raw_token = request.cookies.get(settings.REFRESH_COOKIE_NAME)
     if not raw_token:
-        raise UnauthorizedException(message="登录已失效，请重新登录")
+        raise BusinessException(message="登录已失效，请重新登录", code=401)
 
     result, new_refresh_token = auth_service.refresh_access_token(db, raw_token)
     _set_refresh_cookie(response, new_refresh_token)
